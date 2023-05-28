@@ -246,6 +246,7 @@ class ChatIO(abc.ABC):
 
 def chat_loop(
     model_path: str,
+    model_type: str,
     device: str,
     num_gpus: int,
     max_gpu_memory: str,
@@ -260,10 +261,10 @@ def chat_loop(
 ):
     # Model
     model, tokenizer = load_model(
-        model_path, device, num_gpus, max_gpu_memory, load_8bit, cpu_offloading, debug
+        model_path, model_type, device, num_gpus, max_gpu_memory, load_8bit, cpu_offloading, debug
     )
-    is_chatglm = "chatglm" in str(type(model)).lower()
-    is_fastchat_t5 = "t5" in str(type(model)).lower()
+    is_chatglm = "chatglm" in model_type
+    is_fastchat_t5 = "t5" in model_type
 
     # Hardcode T5 repetition penalty to be 1.2
     if is_fastchat_t5 and repetition_penalty == 1.0:
@@ -273,7 +274,7 @@ def chat_loop(
     if conv_template:
         conv = get_conv_template(conv_template)
     else:
-        conv = get_conversation_template(model_path)
+        conv = get_conversation_template(model_type)
 
     while True:
         try:

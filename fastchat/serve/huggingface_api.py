@@ -18,6 +18,7 @@ from fastchat.model import load_model, get_conversation_template, add_model_args
 def main(args):
     model, tokenizer = load_model(
         args.model_path,
+        args.model_type,
         args.device,
         args.num_gpus,
         args.max_gpu_memory,
@@ -28,7 +29,7 @@ def main(args):
 
     msg = args.message
 
-    conv = get_conversation_template(args.model_path)
+    conv = get_conversation_template(args.model_type)
     conv.append_message(conv.roles[0], msg)
     conv.append_message(conv.roles[1], None)
     prompt = conv.get_prompt()

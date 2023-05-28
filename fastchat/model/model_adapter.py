@@ -2,7 +2,7 @@
 
 import math
 import sys
-from typing import List, Optional
+from typing import List, Dict, Optional
 import warnings
 
 if sys.version_info >= (3, 9):
@@ -34,8 +34,8 @@ from fastchat.utils import get_gpu_memory
 class BaseAdapter:
     """The base and the default model adapter."""
 
-    def match(self, model_path: str):
-        return True
+    def type(self):
+        return "base"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
@@ -49,21 +49,22 @@ class BaseAdapter:
 
 
 # A global registry for all model adapters
-model_adapters: List[BaseAdapter] = []
+# model_type => adapter
+model_adapters: Dict[str, BaseAdapter] = {}
 
 
 def register_model_adapter(cls):
     """Register a model adapter."""
-    model_adapters.append(cls())
+    c = cls()
+    model_adapters[c.type()] = c
 
 
 @cache
-def get_model_adapter(model_path: str) -> BaseAdapter:
+def get_model_adapter(model_type: str) -> BaseAdapter:
     """Get a model adapter for a model_path."""
-    for adapter in model_adapters:
-        if adapter.match(model_path):
-            return adapter
-    raise ValueError(f"No valid model adapter for {model_path}")
+    if model_type in model_adapters.keys():
+        return model_adapters[model_type]
+    raise ValueError(f"No valid model adapter for {model_type}")
 
 
 def raise_warning_for_incompatible_cpu_offloading_configuration(
@@ -94,6 +95,7 @@ def raise_warning_for_incompatible_cpu_offloading_configuration(
 
 def load_model(
     model_path: str,
+    model_type: str,
     device: str,
     num_gpus: int,
     max_gpu_memory: Optional[str] = None,
@@ -154,7 +156,7 @@ def load_model(
             )
 
     # Load model
-    adapter = get_model_adapter(model_path)
+    adapter = get_model_adapter(model_type)
     model, tokenizer = adapter.load_model(model_path, kwargs)
 
     if (device == "cuda" and num_gpus == 1 and not cpu_offloading) or device == "mps":
@@ -166,9 +168,9 @@ def load_model(
     return model, tokenizer
 
 
-def get_conversation_template(model_path: str) -> Conversation:
-    adapter = get_model_adapter(model_path)
-    return adapter.get_default_conv_template(model_path)
+def get_conversation_template(model_type: str) -> Conversation:
+    adapter = get_model_adapter(model_type)
+    return adapter.get_default_conv_template(model_type)
 
 
 def add_model_args(parser):
@@ -177,6 +179,12 @@ def add_model_args(parser):
         type=str,
         default="lmsys/fastchat-t5-3b-v1.0",
         help="The path to the weights. This can be a local folder or a Hugging Face repo ID.",
+    )
+    parser.add_argument(
+        "--model-type",
+        type=str,
+        choices=model_adapters.keys(),
+        help="The model type",
     )
     parser.add_argument(
         "--device",
@@ -210,8 +218,8 @@ def add_model_args(parser):
 class VicunaAdapter(BaseAdapter):
     "Model adapater for vicuna-v1.1"
 
-    def match(self, model_path: str):
-        return "vicuna" in model_path
+    def type(self):
+        return "vicuna"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
@@ -241,8 +249,8 @@ class VicunaAdapter(BaseAdapter):
 class T5Adapter(BaseAdapter):
     """The model adapter for lmsys/fastchat-t5-3b-v1.0"""
 
-    def match(self, model_path: str):
-        return "t5" in model_path
+    def type(self):
+        return "t5"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         tokenizer = T5Tokenizer.from_pretrained(model_path, use_fast=False)
@@ -255,8 +263,8 @@ class T5Adapter(BaseAdapter):
 class KoalaAdapter(BaseAdapter):
     """The model adapter for koala"""
 
-    def match(self, model_path: str):
-        return "koala" in model_path
+    def type(self):
+        return "koala"
 
     def get_default_conv_template(self, model_path: str) -> Conversation:
         return get_conv_template("koala_v1")
@@ -265,8 +273,8 @@ class KoalaAdapter(BaseAdapter):
 class ChatGLMAdapter(BaseAdapter):
     """The model adapter for THUDM/chatglm-6b"""
 
-    def match(self, model_path: str):
-        return "chatglm" in model_path
+    def type(self):
+        return "chatglm"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
@@ -279,8 +287,8 @@ class ChatGLMAdapter(BaseAdapter):
 class DollyV2Adapter(BaseAdapter):
     """The model adapter for databricks/dolly-v2-12b"""
 
-    def match(self, model_path: str):
-        return "dolly-v2" in model_path
+    def type(self):
+        return "dolly-v2"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
@@ -300,8 +308,8 @@ class DollyV2Adapter(BaseAdapter):
 class OasstPythiaAdapter(BaseAdapter):
     """The model adapter for OpenAssistant/oasst-sft-1-pythia-12b"""
 
-    def match(self, model_path: str):
-        return "oasst" in model_path and "pythia" in model_path
+    def type(self):
+        return "oasst_pythia"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
@@ -319,8 +327,8 @@ class OasstPythiaAdapter(BaseAdapter):
 class StableLMAdapter(BaseAdapter):
     """The model adapter for StabilityAI/stablelm-tuned-alpha-7b"""
 
-    def match(self, model_path: str):
-        return "stablelm" in model_path
+    def type(self):
+        return "stablelm"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
@@ -338,8 +346,8 @@ class StableLMAdapter(BaseAdapter):
 class MPTAdapter(BaseAdapter):
     """The model adapter for mosaicml/mpt-7b-chat"""
 
-    def match(self, model_path: str):
-        return "mpt" in model_path
+    def type(self):
+        return "mpt"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         model = AutoModelForCausalLM.from_pretrained(
@@ -361,8 +369,8 @@ class MPTAdapter(BaseAdapter):
 class BaizeAdapter(BaseAdapter):
     """The model adapter for project-baize/baize-lora-7B"""
 
-    def match(self, model_path: str):
-        return "baize" in model_path
+    def type(self):
+        return "baize"
 
     def get_default_conv_template(self, model_path: str) -> Conversation:
         return get_conv_template("baize")
@@ -371,8 +379,8 @@ class BaizeAdapter(BaseAdapter):
 class RwkvAdapter(BaseAdapter):
     """The model adapter for BlinkDL/RWKV-4-Raven"""
 
-    def match(self, model_path: str):
-        return "RWKV-4" in model_path
+    def type(self):
+        return "RWKV-4"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         from fastchat.model.rwkv_model import RwkvModel
@@ -390,8 +398,8 @@ class RwkvAdapter(BaseAdapter):
 class OpenBuddyAdapter(BaseAdapter):
     """The model adapter for OpenBuddy/openbuddy-7b-v1.1-bf16-enc"""
 
-    def match(self, model_path: str):
-        return "openbuddy" in model_path
+    def type(self):
+        return "openbuddy"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         if "-bf16" in model_path:
@@ -412,8 +420,8 @@ class OpenBuddyAdapter(BaseAdapter):
 class PhoenixAdapter(BaseAdapter):
     """The model adapter for FreedomIntelligence/phoenix-inst-chat-7b"""
 
-    def match(self, model_path: str):
-        return "phoenix" in model_path
+    def type(self):
+        return "phoenix"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
@@ -431,8 +439,8 @@ class PhoenixAdapter(BaseAdapter):
 class ChatGPTAdapter(BaseAdapter):
     """The model adapter for ChatGPT."""
 
-    def match(self, model_path: str):
-        return model_path == "gpt-3.5-turbo" or model_path == "gpt-4"
+    def type(self):
+        return "chatgpt"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         raise NotImplementedError()
@@ -444,8 +452,8 @@ class ChatGPTAdapter(BaseAdapter):
 class ClaudeAdapter(BaseAdapter):
     """The model adapter for Claude."""
 
-    def match(self, model_path: str):
-        return model_path in ["claude-v1", "claude-instant-v1"]
+    def type(self):
+        return "claude"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         raise NotImplementedError()
@@ -457,8 +465,8 @@ class ClaudeAdapter(BaseAdapter):
 class BardAdapter(BaseAdapter):
     """The model adapter for Bard."""
 
-    def match(self, model_path: str):
-        return model_path == "bard"
+    def type(self):
+        return "bard"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         raise NotImplementedError()
@@ -470,8 +478,8 @@ class BardAdapter(BaseAdapter):
 class BiLLaAdapter(BaseAdapter):
     """The model adapter for BiLLa."""
 
-    def match(self, model_path: str):
-        return "billa" in model_path.lower()
+    def type(self):
+        return "billa"
 
     def get_default_conv_template(self, model_path: str) -> Conversation:
         return get_conv_template("billa")
@@ -480,8 +488,8 @@ class BiLLaAdapter(BaseAdapter):
 class RedPajamaINCITEAdapter(BaseAdapter):
     """The model adapter for RedPajama INCITE."""
 
-    def match(self, model_path: str):
-        return "redpajama-incite" in model_path.lower()
+    def type(self):
+        return "redpajama-incite"
 
     def load_model(self, model_path: str, from_pretrained_kwargs: dict):
         tokenizer = AutoTokenizer.from_pretrained(model_path)  # no use_fast=False
@@ -499,8 +507,8 @@ class RedPajamaINCITEAdapter(BaseAdapter):
 class H2OGPTAdapter(BaseAdapter):
     """The model adapter for h2oGPT."""
 
-    def match(self, model_path: str):
-        return "h2ogpt" in model_path.lower()
+    def type(self):
+        return "h2ogpt"
 
     def get_default_conv_template(self, model_path: str) -> Conversation:
         return get_conv_template("h2ogpt")

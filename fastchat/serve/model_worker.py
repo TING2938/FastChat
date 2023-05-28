@@ -64,6 +64,7 @@ class ModelWorker:
         no_register,
         model_path,
         model_name,
+        model_type,
         device,
         num_gpus,
         max_gpu_memory,
@@ -76,11 +77,12 @@ class ModelWorker:
         if model_path.endswith("/"):
             model_path = model_path[:-1]
         self.model_name = model_name or model_path.split("/")[-1]
+        self.model_type = model_type
         self.device = device
 
         logger.info(f"Loading the model {self.model_name} on worker {worker_id} ...")
         self.model, self.tokenizer = load_model(
-            model_path, device, num_gpus, max_gpu_memory, load_8bit, cpu_offloading
+            model_path, model_type, device, num_gpus, max_gpu_memory, load_8bit, cpu_offloading
         )
         if self.tokenizer.pad_token == None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -93,7 +95,7 @@ class ModelWorker:
             self.context_len = 2048
 
         # generate_stream
-        is_chatglm = "chatglm" in str(type(self.model)).lower()
+        is_chatglm = "chatglm" in model_type
         if is_chatglm:
             self.generate_stream_func = chatglm_generate_stream
         else:
@@ -163,6 +165,7 @@ class ModelWorker:
     def get_status(self):
         return {
             "model_names": [self.model_name],
+            "model_type": self.model_type,
             "speed": 1,
             "queue_length": self.get_queue_length(),
         }
@@ -418,6 +421,7 @@ if __name__ == "__main__":
         args.no_register,
         args.model_path,
         args.model_name,
+        args.model_type,
         args.device,
         args.num_gpus,
         args.max_gpu_memory,

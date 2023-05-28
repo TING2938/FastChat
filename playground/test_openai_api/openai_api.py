@@ -5,7 +5,7 @@ from fastchat.model import get_conversation_template
 def chatgpt():
     import openai
     model = "gpt-3.5-turbo"
-    conv = get_conversation_template(model)
+    conv = get_conversation_template("chatgpt")
     conv.append_message(conv.roles[0], "Hello!")
     conv.append_message(conv.roles[1], None)
 

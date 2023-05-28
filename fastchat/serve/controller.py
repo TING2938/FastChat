@@ -43,6 +43,7 @@ class DispatchMethod(Enum):
 @dataclasses.dataclass
 class WorkerInfo:
     model_names: List[str]
+    model_type: str
     speed: int
     queue_length: int
     check_heart_beat: bool
@@ -83,6 +84,7 @@ class Controller:
 
         self.worker_info[worker_name] = WorkerInfo(
             worker_status["model_names"],
+            worker_status["model_type"],
             worker_status["speed"],
             worker_status["queue_length"],
             check_heart_beat,
@@ -176,6 +178,12 @@ class Controller:
             return w_name
         else:
             raise ValueError(f"Invalid dispatch method: {self.dispatch_method}")
+
+    def get_model_type(self, model_name: str):
+        for _, w_info in self.worker_info.items():
+            if model_name in w_info.model_names:
+                return w_info.model_type
+        return ""
 
     def receive_heart_beat(self, worker_name: str, queue_length: int):
         if worker_name not in self.worker_info:
@@ -277,6 +285,7 @@ class Controller:
 
         return {
             "model_names": list(model_names),
+            "model_type": "base",
             "speed": speed,
             "queue_length": queue_length,
         }
@@ -310,6 +319,11 @@ async def get_worker_address(request: Request):
     addr = controller.get_worker_address(data["model"])
     return {"address": addr}
 
+@app.post("/get_model_type")
+async def get_model_type(request: Request):
+    data = await request.json()
+    model_type = controller.get_model_type(data["model"])
+    return {"type": model_type}
 
 @app.post("/receive_heart_beat")
 async def receive_heart_beat(request: Request):

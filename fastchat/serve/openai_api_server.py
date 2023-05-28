@@ -186,6 +186,7 @@ def process_input(model_name, input):
 
 def get_gen_params(
     model_name: str,
+    model_type: str,
     messages: Union[str, List[Dict[str, str]]],
     *,
     temperature: float,
@@ -195,7 +196,7 @@ def get_gen_params(
     stream: Optional[bool],
     stop: Optional[Union[str, List[str]]],
 ) -> Dict[str, Any]:
-    conv = get_conversation_template(model_name)
+    conv = get_conversation_template(model_type)
 
     if isinstance(messages, str):
         prompt = messages
@@ -214,7 +215,7 @@ def get_gen_params(
         # Add a blank message for the assistant.
         conv.append_message(conv.roles[1], None)
 
-        is_chatglm = "chatglm" in model_name.lower()
+        is_chatglm = "chatglm" in model_type
         if is_chatglm:
             prompt = conv.messages[conv.offset :]
         else:
@@ -265,6 +266,23 @@ async def _get_worker_address(model_name: str, client: httpx.AsyncClient) -> str
 
     logger.debug(f"model_name: {model_name}, worker_addr: {worker_addr}")
     return worker_addr
+
+async def _get_model_type(model_name: str, client: httpx.AsyncClient) -> str:
+    """
+    Get model type
+    """
+    controller_address = app_settings.controller_address
+
+    ret = await client.post(
+        controller_address + "/get_model_type", json={"model": model_name}
+    )
+    model_type = ret.json()["type"]
+    # No available worker
+    if model_type == "":
+        raise ValueError(f"No available worker for {model_name}")
+
+    logger.debug(f"model_name: {model_name}, model_type: {model_type}")
+    return model_type
 
 
 @app.get("/v1/models")
@@ -325,8 +343,12 @@ async def create_chat_completion(request: ChatCompletionRequest):
     if error_check_ret is not None:
         return error_check_ret
 
+    async with httpx.AsyncClient() as client:
+        model_type = await _get_model_type(request.model, client)
+
     gen_params = get_gen_params(
         request.model,
+        model_type,
         request.messages,
         temperature=request.temperature,
         top_p=request.top_p,
@@ -495,10 +517,13 @@ async def create_completion(request: CompletionRequest):
         generator = generate_completion_stream_generator(request, request.n)
         return StreamingResponse(generator, media_type="text/event-stream")
     else:
+        async with httpx.AsyncClient() as client:
+            model_type = await _get_model_type(request.model, client)
         text_completions = []
         for text in request.prompt:
             payload = get_gen_params(
                 request.model,
+                model_type,
                 text,
                 temperature=request.temperature,
                 top_p=request.top_p,
@@ -540,6 +565,8 @@ async def create_completion(request: CompletionRequest):
 
 async def generate_completion_stream_generator(request: CompletionRequest, n: int):
     model_name = request.model
+    async with httpx.AsyncClient() as client:
+        model_type = await _get_model_type(request.model, client)
     id = f"cmpl-{shortuuid.random()}"
     finish_stream_events = []
     for text in request.prompt:
@@ -547,6 +574,7 @@ async def generate_completion_stream_generator(request: CompletionRequest, n: in
             previous_text = ""
             payload = get_gen_params(
                 request.model,
+                model_type,
                 text,
                 temperature=request.temperature,
                 top_p=request.top_p,
